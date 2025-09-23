@@ -35,17 +35,79 @@ class TextProcessor:
         logger.info(f"TextProcessor initialized with {len(self.stop_words)} stop words")
     
     def tokenize(self, text: str, remove_stop_words: bool = True) -> List[str]:
-        """Tokenize text into words"""
+        """Tokenize text into words, numbers, and codes.
+        
+        Handles:
+        - Words (preserving case for acronyms)
+        - Numbers (404, 500, 3.14)
+        - Codes (XK9-2B4-7Q1, API_KEY, user@example.com)
+        - Technical terms (C++, .NET, Node.js)
+        """
         logger.debug(f"Tokenizing text of length {len(text)}")
         
-        # Convert to lowercase and split by non-alphanumeric characters
-        text = text.lower()
-        tokens = re.findall(r'\b[a-z]+\b', text)
+        # Comprehensive tokenization patterns
+        patterns = [
+            # Email addresses (keep whole)
+            r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b',
+            # URLs (simplified)
+            r'https?://[^\s]+',
+            # API keys, codes with hyphens/underscores (e.g., XK9-2B4-7Q1, API_KEY_123)
+            r'\b[A-Z0-9]+(?:[_-][A-Z0-9]+)+\b',
+            # Technical terms with special chars (C++, C#, .NET)
+            r'\b[A-Z]\+\+|\b[A-Z]#|\.[A-Z]+[a-zA-Z]*',
+            # Version numbers (3.14, 2.0.1)
+            r'\b\d+(?:\.\d+)+\b',
+            # Hex codes (#FF5733, 0x1234)
+            r'#[0-9A-Fa-f]{3,8}\b|0x[0-9A-Fa-f]+\b',
+            # Numbers (including decimals)
+            r'\b\d+(?:\.\d+)?\b',
+            # Acronyms and uppercase words (USA, NASA, API)
+            r'\b[A-Z]{2,}\b',
+            # Mixed case words (JavaScript, PyTorch)
+            r'\b[A-Z][a-z]+[A-Z][a-zA-Z]*\b',
+            # Alphanumeric combinations (Python3, ES6, 3DS)
+            r'\b[A-Za-z]+\d+\b|\b\d+[A-Za-z]+\b',
+            # Regular words (including apostrophes)
+            r"\b[a-zA-Z]+(?:'[a-z]+)?\b",
+        ]
+        
+        # Combine all patterns
+        combined_pattern = '|'.join(f'({p})' for p in patterns)
+        
+        # Extract all tokens
+        raw_tokens = re.findall(combined_pattern, text, re.IGNORECASE)
+        
+        # Flatten the results (findall with groups returns tuples)
+        tokens = []
+        for match in raw_tokens:
+            token = next(t for t in match if t)  # Get the non-empty match
+            
+            # Preserve case for:
+            # - All uppercase words (API, USA)
+            # - Mixed case (JavaScript, PyTorch)
+            # - Codes with special chars
+            # - Numbers
+            # - Alphanumeric combinations (Python3, ES6)
+            if (token.isupper() and len(token) > 1) or \
+               any(c.isupper() for c in token[1:]) or \
+               any(c in '-_@.#+' for c in token) or \
+               any(c.isdigit() for c in token) or \
+               token.startswith('.'):
+                tokens.append(token)
+            else:
+                # Convert regular words to lowercase
+                tokens.append(token.lower())
         
         logger.debug(f"Found {len(tokens)} raw tokens")
         
         if remove_stop_words:
-            tokens = [t for t in tokens if t not in self.stop_words]
+            # Only remove stop words from lowercase word tokens
+            filtered_tokens = []
+            for token in tokens:
+                # Keep if: not a lowercase word, or not in stop words
+                if not token.islower() or token not in self.stop_words:
+                    filtered_tokens.append(token)
+            tokens = filtered_tokens
             logger.debug(f"After removing stop words: {len(tokens)} tokens")
         
         return tokens
@@ -258,7 +320,13 @@ class BM25:
         term_doc_mapping = {}
         
         for term in query_terms:
+            # Try exact match first
             docs = self.index.get_posting_list(term)
+            
+            # If no exact match and term is not a number/code, try lowercase
+            if not docs and not term[0].isdigit() and '-' not in term:
+                docs = self.index.get_posting_list(term.lower())
+            
             candidate_docs.update(docs)
             term_doc_mapping[term] = docs
             logger.debug(f"Term '{term}' appears in {len(docs)} documents")
