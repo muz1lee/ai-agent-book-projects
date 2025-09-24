@@ -382,7 +382,7 @@ def main():
     parser = argparse.ArgumentParser(description="Chunk and index documents")
     parser.add_argument("path", help="File or directory path to index")
     parser.add_argument("--chunk-size", type=int, default=2048, help="Chunk size in characters")
-    parser.add_argument("--max-chunk-size", type=int, default=4096, help="Max chunk size")
+    parser.add_argument("--max-chunk-size", type=int, default=1024, help="Max chunk size")
     parser.add_argument("--overlap", type=int, default=200, help="Chunk overlap")
     parser.add_argument("--kb-type", choices=["local", "dify"], default="local", help="Knowledge base type")
     parser.add_argument("--extensions", nargs="+", default=[".txt", ".md"], help="File extensions to index")

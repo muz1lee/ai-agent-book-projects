@@ -69,7 +69,7 @@ python chunking.py path/to/document.txt
 python chunking.py path/to/documents/ --extensions .txt .md
 
 # Custom chunk size
-python chunking.py documents/ --chunk-size 2048 --max-chunk-size 4096
+python chunking.py documents/ --chunk-size 2048 --max-chunk-size 1024
 ```
 
 For the evaluation dataset, first generate and index the legal documents:

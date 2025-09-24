@@ -97,31 +97,79 @@ Remember: Your credibility depends on providing accurate, well-cited information
                 query = arguments.get("query", "")
                 results = self.kb_tools.knowledge_base_search(query)
                 
+                # Log full trajectory when verbose
+                if self.config.agent.verbose:
+                    logger.info("=" * 80)
+                    logger.info(f"TOOL EXECUTION: {tool_name}")
+                    logger.info("-" * 80)
+                    logger.info(f"Query: {query}")
+                    logger.info("-" * 80)
+                
                 if not results:
+                    if self.config.agent.verbose:
+                        logger.info("Results: No relevant documents found")
+                        logger.info("=" * 80)
                     return {"status": "no_results", "message": "No relevant documents found"}
                 
-                # Format results for agent
+                # Format results for agent - KEEP ALL RESULTS
                 formatted_results = []
-                for r in results[:5]:  # Limit to top 5 for context
+                for i, r in enumerate(results, 1):
                     formatted_results.append({
                         "doc_id": r["doc_id"],
                         "chunk_id": r["chunk_id"],
                         "text": r["text"],
                         "score": r["score"]
                     })
+                    
+                    # Log each result in full detail
+                    if self.config.agent.verbose:
+                        logger.info(f"Result {i}/{len(results)}:")
+                        logger.info(f"  Document ID: {r['doc_id']}")
+                        logger.info(f"  Chunk ID: {r['chunk_id']}")
+                        logger.info(f"  Score: {r['score']:.4f}")
+                        logger.info(f"  Text (full):\n{'-' * 40}")
+                        logger.info(r['text'])
+                        logger.info("-" * 40)
+                
+                if self.config.agent.verbose:
+                    logger.info(f"Total results found: {len(results)}")
+                    logger.info("=" * 80)
                 
                 return {
                     "status": "success",
-                    "results": formatted_results,
-                    "total_found": len(results)
+                    "results": formatted_results[:3],  # Limit to top 3 for LLM context
+                    "total_found": len(results),
+                    "all_results": formatted_results  # Keep all for logging
                 }
                 
             elif tool_name == "get_document":
                 doc_id = arguments.get("doc_id", "")
+                
+                # Log full trajectory when verbose
+                if self.config.agent.verbose:
+                    logger.info("=" * 80)
+                    logger.info(f"TOOL EXECUTION: {tool_name}")
+                    logger.info("-" * 80)
+                    logger.info(f"Document ID: {doc_id}")
+                    logger.info("-" * 80)
+                
                 document = self.kb_tools.get_document(doc_id)
                 
                 if "error" in document:
+                    if self.config.agent.verbose:
+                        logger.info(f"Error: {document['error']}")
+                        logger.info("=" * 80)
                     return {"status": "error", "message": document["error"]}
+                
+                # Log full document content
+                if self.config.agent.verbose:
+                    logger.info("Document Retrieved:")
+                    logger.info(f"  Doc ID: {document.get('doc_id', doc_id)}")
+                    if document.get('metadata'):
+                        logger.info(f"  Metadata: {json.dumps(document['metadata'], indent=2, ensure_ascii=False)}")
+                    logger.info("  Content (full):\n" + "=" * 40)
+                    logger.info(document.get('content', ''))
+                    logger.info("=" * 80)
                 
                 return {
                     "status": "success",
@@ -181,7 +229,9 @@ Remember: Your credibility depends on providing accurate, well-cited information
             iterations += 1
             
             if self.config.agent.verbose:
-                logger.info(f"Iteration {iterations}/{max_iterations}")
+                logger.info("\n" + "=" * 100)
+                logger.info(f"ITERATION {iterations}/{max_iterations}")
+                logger.info("=" * 100)
             
             try:
                 # Call LLM with tools
@@ -222,16 +272,37 @@ Remember: Your credibility depends on providing accurate, well-cited information
                             arguments = {}
                         
                         if self.config.agent.verbose:
-                            logger.info(f"Executing tool: {tool_name} with args: {arguments}")
+                            logger.info("\n" + "#" * 80)
+                            logger.info(f"TOOL CALL: {tool_name}")
+                            logger.info(f"Arguments: {json.dumps(arguments, indent=2, ensure_ascii=False)}")
+                            logger.info("#" * 80)
                         
                         # Execute tool
                         result = self._execute_tool(tool_name, arguments)
+                        
+                        # Log full tool result when verbose
+                        if self.config.agent.verbose:
+                            logger.info("\n" + "*" * 80)
+                            logger.info("TOOL RESULT:")
+                            logger.info("*" * 80)
+                            # Show full result including all_results if present
+                            if 'all_results' in result:
+                                logger.info("All Search Results (Complete):")
+                                for idx, res in enumerate(result['all_results'], 1):
+                                    logger.info(f"\nResult {idx}:")
+                                    logger.info(json.dumps(res, indent=2, ensure_ascii=False))
+                            else:
+                                logger.info(json.dumps(result, indent=2, ensure_ascii=False))
+                            logger.info("*" * 80 + "\n")
+                        
+                        # For messages, don't include all_results to avoid overloading LLM
+                        result_for_llm = {k: v for k, v in result.items() if k != 'all_results'}
                         
                         # Add tool result to messages
                         tool_message = {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
-                            "content": json.dumps(result, ensure_ascii=False)
+                            "content": json.dumps(result_for_llm, ensure_ascii=False)
                         }
                         messages.append(tool_message)
                     
@@ -292,7 +363,7 @@ Remember: Your credibility depends on providing accurate, well-cited information
             
             # Build context from search results
             context_parts = []
-            for i, result in enumerate(search_results[:5], 1):  # Top 5 results
+            for i, result in enumerate(search_results[:3], 1):  # Top 3 results
                 context_parts.append(
                     f"[Document {i}] (ID: {result['doc_id']}, Chunk: {result['chunk_id']})\n{result['text']}\n"
                 )

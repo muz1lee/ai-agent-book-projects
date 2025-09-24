@@ -60,6 +60,7 @@ def run_interactive_mode(agent: AgenticRAG, mode: str = "agentic"):
     """Run interactive query mode"""
     print(f"\n{'='*60}")
     print(f"Agentic RAG System - {mode.capitalize()} Mode")
+    print(f"Verbose: {'Enabled' if agent.config.agent.verbose else 'Disabled'} | Top-K: {agent.config.knowledge_base.local_top_k}")
     print(f"{'='*60}")
     print("Type 'quit' or 'exit' to stop")
     print("Type 'clear' to clear conversation history")
@@ -199,7 +200,8 @@ def main():
     parser.add_argument("--provider", type=str, help="LLM provider")
     parser.add_argument("--model", type=str, help="LLM model")
     parser.add_argument("--kb-type", choices=["local", "dify"], help="Knowledge base type")
-    parser.add_argument("--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("--verbose", action="store_true", help="Verbose output (default: True)")
+    parser.add_argument("--no-verbose", action="store_true", help="Disable verbose output")
     
     # Indexing options
     parser.add_argument("--index", type=str, help="Path to index (file or directory)")
@@ -214,6 +216,9 @@ def main():
     # Load or create config
     config = Config.from_env()
     
+    # Set verbose mode by default (can be disabled with --no-verbose)
+    config.agent.verbose = True  # Default to verbose mode
+    
     # Override config with command line args
     if args.provider:
         config.llm.provider = args.provider
@@ -221,8 +226,12 @@ def main():
         config.llm.model = args.model
     if args.kb_type:
         config.knowledge_base.type = KnowledgeBaseType(args.kb_type)
-    if args.verbose:
-        config.agent.verbose = True
+    
+    # Handle verbose mode (default is True, can be disabled with --no-verbose)
+    if args.no_verbose:
+        config.agent.verbose = False
+    elif args.verbose:
+        config.agent.verbose = True  # Explicitly set if --verbose is used
     
     # Handle indexing if requested
     if args.index:
@@ -259,6 +268,8 @@ def main():
         # Single query mode
         print(f"\n[Query] {args.query}")
         print(f"[Mode] {args.mode}")
+        print(f"[Verbose] {'Enabled' if config.agent.verbose else 'Disabled'}")
+        print(f"[Top-K] {config.knowledge_base.local_top_k}")
         print("-" * 40)
         
         if args.mode == "agentic":
