@@ -106,11 +106,11 @@ Remember: Your credibility depends on providing accurate, well-cited information
                 
                 # Format results for agent
                 formatted_results = []
-                for r in results[:5]:  # Limit to top 5 for context
+                for r in results:
                     formatted_results.append({
                         "doc_id": r["doc_id"],
                         "chunk_id": r["chunk_id"],
-                        "text": r["text"][:500],  # Truncate for display
+                        "text": r["text"],
                         "score": r["score"]
                     })
                 
@@ -230,13 +230,13 @@ Remember: Your credibility depends on providing accurate, well-cited information
                         result = self._execute_tool(tool_name, arguments)
                         
                         if self.config.agent.verbose:
-                            logger.info(f"Tool result: {json.dumps(result, ensure_ascii=False)[:200]}...")
+                            logger.info(f"Tool result: {json.dumps(result, indent=2, ensure_ascii=False)}")
                         
                         # Add tool result to messages
                         tool_message = {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
-                            "content": json.dumps(result, ensure_ascii=False)
+                            "content": json.dumps(result, indent=2, ensure_ascii=False)
                         }
                         messages.append(tool_message)
                     

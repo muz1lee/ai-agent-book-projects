@@ -104,20 +104,39 @@ class KnowledgeBaseTools:
             results = []
             data = response.json()
             
-            if not data.get("results"):
-                logger.warning(f"Search returned empty results for query: {query}")
-                return []
+            # The retrieval pipeline returns results in 'reranked_results' field for hybrid mode
+            results_field = data.get("reranked_results") or data.get("results") or []
             
-            for item in data.get("results", []):
-                # Extract doc_id and chunk_id from the result
+            if not results_field:
+                # Check other possible fields
+                if data.get("dense_results"):
+                    results_field = data.get("dense_results", [])
+                elif data.get("sparse_results"):
+                    results_field = data.get("sparse_results", [])
+                    
+                if not results_field:
+                    logger.warning(f"Search returned empty results for query: {query}")
+                    logger.debug(f"Response keys: {data.keys()}")
+                    return []
+            
+            for item in results_field:
+                # Extract doc_id - the field name varies between results
                 doc_id = item.get("doc_id", "")
-                chunk_id = item.get("chunk_id", f"{doc_id}_chunk_{len(results)}")
+                
+                # Use doc_id as chunk_id since the retrieval pipeline indexes chunks
+                chunk_id = doc_id
+                
+                # Get text from the result
+                text = item.get("text", "")
+                
+                # Get score - might be 'rerank_score' or 'score'
+                score = item.get("rerank_score", item.get("score", 0.0))
                 
                 result = SearchResult(
                     doc_id=doc_id,
                     chunk_id=chunk_id,
-                    text=item.get("text", ""),
-                    score=item.get("score", 0.0),
+                    text=text,
+                    score=score,
                     metadata=item.get("metadata", {})
                 )
                 results.append(result.to_dict())

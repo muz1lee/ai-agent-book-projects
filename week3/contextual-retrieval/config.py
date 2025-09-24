@@ -123,7 +123,7 @@ class KnowledgeBaseConfig:
     
     # Local retrieval pipeline config
     local_base_url: str = "http://localhost:4242"
-    local_top_k: int = 10
+    local_top_k: int = 3
     
     # Dify config
     dify_api_key: Optional[str] = field(default_factory=lambda: os.getenv("DIFY_API_KEY"))

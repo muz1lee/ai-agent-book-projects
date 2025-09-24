@@ -47,15 +47,6 @@ Unlike traditional RAG that loses context when chunking, this script:
 ```bash
 # Index with contextual enhancement (default)
 python index_local_laws_contextual.py
-
-# Run comparison test after indexing
-python index_local_laws_contextual.py --compare
-```
-
-### Non-Contextual Mode (for comparison)
-```bash
-# Index WITHOUT contextual enhancement
-python index_local_laws_contextual.py --no-contextual
 ```
 
 ### Advanced Options
@@ -76,54 +67,6 @@ python index_local_laws_contextual.py --batch-size 20
 python index_local_laws_contextual.py --no-cleanup
 ```
 
-## How Contextual Retrieval Works
-
-For each chunk, the script:
-
-1. **Provides Full Context**: Shows the LLM the entire document (or surrounding context)
-2. **Generates Description**: LLM creates a 2-3 sentence context explaining:
-   - What section/topic this chunk belongs to
-   - Important entities and relationships
-   - How it relates to the document's main topic
-3. **Prepends Context**: The context is added before the chunk text
-4. **Indexes Enhanced Chunk**: Both dense and sparse search benefit from added context
-
-Example transformation:
-```
-Original Chunk:
-"第三款规定了违约责任的承担方式..."
-
-Contextualized Chunk:
-"本段落位于合同法第七章违约责任部分，详细说明了当事人违反合同约定时的法律后果和赔偿方式。
-
-第三款规定了违约责任的承担方式..."
-```
-
-## Output Statistics
-
-### Contextual Mode Statistics
-- Documents and chunks processed
-- Context generation metrics:
-  - Total/average tokens used
-  - Generation time
-  - Cache hit rate
-- Cost estimation based on LLM provider
-- Processing speed
-
-### Comparison Test Results
-Shows retrieval performance for test queries, displaying:
-- Search scores
-- Retrieved context
-- Document categories
-- Text previews
-
-## Performance Optimization
-
-1. **Caching**: Identical chunks reuse cached context
-2. **Batch Processing**: Indexes chunks in configurable batches
-3. **Parallel Processing**: Dense and sparse indexing happen simultaneously
-4. **Smart Truncation**: Document context is intelligently truncated for long documents
-
 ## Cost Considerations
 
 Context generation requires LLM API calls:
@@ -136,22 +79,9 @@ Estimate for 288 legal documents:
 - ~450K-750K tokens
 - Cost: $5-15 depending on provider
 
-## Comparison Mode
-
-Run both contextual and non-contextual indexing to compare:
-```bash
-# First: Index with context
-python index_local_laws_contextual.py --compare
-
-# Then: Index without context
-python index_local_laws_contextual.py --no-contextual --compare
-```
-
-Compare results to see retrieval improvement from contextual enhancement.
-
 ## Document Store
 
-Maintains `contextual_document_store.json` with:
+Maintains `document_store.json` with:
 - Document metadata
 - Chunk statistics
 - Context token usage

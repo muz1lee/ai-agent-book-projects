@@ -161,18 +161,14 @@ Remember that contextual chunks have been enhanced with additional information t
                 
                 # Format results for agent
                 formatted_results = []
-                for i, r in enumerate(results[:10], 1):  # Limit to top 10 for context
+                for i, r in enumerate(results, 1):
                     result_dict = {
                         "rank": i,
                         "doc_id": r.doc_id,
                         "chunk_id": r.chunk_id,
-                        "text": r.text[:500],  # Truncate for display
+                        "text": r.text,
                         "score": r.score
                     }
-                    
-                    # Add context if available
-                    if self.use_contextual and r.context_text:
-                        result_dict["context"] = r.context_text[:200]
                     
                     formatted_results.append(result_dict)
                     
@@ -180,9 +176,7 @@ Remember that contextual chunks have been enhanced with additional information t
                     if i <= 3:
                         logger.info(f"\nTop Result {i}:")
                         logger.info(f"  Score: {r.score:.4f}")
-                        if self.use_contextual and r.context_text:
-                            logger.info(f"  Context: {r.context_text[:100]}...")
-                        logger.info(f"  Text: {r.text[:150]}...")
+                        logger.info(f"  Text: {r.text}")
                 
                 logger.info(f"{'='*60}\n")
                 
