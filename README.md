@@ -187,12 +187,43 @@
 
 **核心概念**：工作流录制、RPA、工具生成、外部化学习
 
+## 🛠️ Week 4 - 工具生态与系统集成
+
+### 1. perception-tools - 感知工具 MCP 服务器
+`week4/perception-tools/`
+
+构建全面的感知工具集，提供网络搜索、多模态理解、文件系统操作和公共数据源访问能力。大部分功能基于免费开放 API（DuckDuckGo、Open-Meteo、Yahoo Finance、OpenStreetMap 等），无需 API 密钥即可使用。
+
+**核心概念**：MCP 协议、多模态解析、公共数据源、文档理解、地理信息服务
+
+### 2. execution-tools - 执行工具 MCP 服务器
+`week4/execution-tools/`
+
+实现具备安全机制的执行工具集，包括文件操作、代码解释器、虚拟终端和外部系统集成。通过 LLM 二次审批机制防止危险操作，自动摘要复杂输出，并对代码进行语法验证。
+
+**核心概念**：MCP 协议、执行安全、LLM 审批、结果摘要、自动验证
+
+### 3. collaboration-tools - 协作工具 MCP 服务器
+`week4/collaboration-tools/`
+
+提供全面的协作能力，包括浏览器自动化（browser-use 框架）、人机协同（Human-in-the-Loop）、多渠道通知（Email、Telegram、Slack、Discord）和定时器管理。支持敏感操作的管理员审批和定时任务调度。
+
+**核心概念**：MCP 协议、浏览器自动化、HITL 模式、多渠道通知、定时任务
+
+### 4. agent-with-event-trigger - 事件触发型 Agent 与 MCP 集成
+`week4/agent-with-event-trigger/`
+
+基于 FastAPI 构建的现代化事件驱动 Agent，默认集成前三个 MCP 服务器的所有工具。采用原生异步架构实现清晰的 MCP 工具加载，通过 HTTP API 接收多源事件（Web、即时消息、GitHub、定时器等）。提供自动 API 文档（Swagger UI）和后台监控能力。
+
+**核心概念**：FastAPI、原生异步、MCP 集成、事件驱动、自动 API 文档、工具编排
+
 ## 📖 学习建议
 
-1. **按顺序学习**：Week 1 建立基础概念，Week 2 深入工程实践，Week 3 探索知识库与学习机制
+1. **按顺序学习**：Week 1 建立基础概念，Week 2 深入工程实践，Week 3 探索知识库与学习机制，Week 4 掌握工具生态与系统集成
 2. **动手实践**：每个项目都设计为可独立运行，建议亲自运行并修改代码
 3. **结合书籍**：配合《AI Agent 实战营》配套电子书相应章节阅读，理解理论与实践的结合
 4. **实验对比**：多个项目包含消融研究和对比实验，通过对比加深理解
+5. **渐进学习**：Week 4 的 MCP 服务器项目展示了标准化工具协议，建议先熟悉 MCP 基础概念再深入学习各个工具模块
 
 ## 🔑 API 密钥
 
