@@ -53,8 +53,3 @@ echo "============================================"
 echo "✅ Training Complete!"
 echo "============================================"
 echo "Model saved to: $OUTPUT_DIR"
-echo ""
-echo "To test the model, run:"
-echo "  python evaluate_trl.py --model_path $OUTPUT_DIR"
-echo "============================================"
-

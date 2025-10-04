@@ -182,22 +182,38 @@ python train_sft_trl.py --report_to none ...other args...
 After training, evaluate the distilled model's performance:
 
 ```bash
-# Evaluate on the full test set
-python evaluate.py \
-    --model_path ./models/prompt_distillation_trl \
-    --test_file ./example-data/multilingual.txt
+# Evaluate with defaults (uses all defaults)
+python evaluate.py
 
 # Quick evaluation on a subset
-python evaluate.py \
-    --model_path ./models/prompt_distillation_trl \
-    --test_file ./example-data/multilingual.txt \
-    --max_samples 100
+python evaluate.py --max_samples 100
 
 # Save results to a file
-python evaluate.py \
-    --model_path ./models/prompt_distillation_trl \
-    --output_file ./evaluation_results.json
+python evaluate.py --output_file ./evaluation_results.json
+
+# Custom model path
+python evaluate.py --model_path ./models/my_custom_model
 ```
+
+**Defaults:**
+- Model: `./models/prompt_distillation_trl`
+- Base model: `Qwen/Qwen3-30B-A3B-Instruct-2507`
+- Test file: `./example-data/multilingual.txt`
+
+**Real-time Output Example:**
+```
+Evaluating model...
+================================================================================
+✓ [   1/2095] Pred: ar | GT: ar | Acc: 1/1 (100.0%) | وقال، ماما، لقد عدت للمنزل.
+✓ [   2/2095] Pred: en | GT: en | Acc: 2/2 (100.0%) | Hello, how are you today?
+✗ [   3/2095] Pred: es | GT: fr | Acc: 2/3 ( 66.7%) | Bonjour, comment allez-vous?
+✓ [   4/2095] Pred: zh | GT: zh | Acc: 3/4 ( 75.0%) | 你好，今天天气怎么样？
+...
+================================================================================
+Evaluation completed: 2095 samples processed
+```
+
+Each line shows: prediction, ground truth, running accuracy, and the input text.
 
 ## Project Structure
 
