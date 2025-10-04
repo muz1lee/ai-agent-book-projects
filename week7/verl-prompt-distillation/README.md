@@ -33,7 +33,7 @@ This implementation uses **exactly the same hyperparameters** as the tinker cook
 
 | Parameter | Value | Source |
 |-----------|-------|--------|
-| **Teacher Model** | Qwen3-30B-A3B-Instruct-2507 | tinker (now open source) |
+| **Teacher Model** | Qwen3-30B-A3B-Thinking-2507 | For better accuracy |
 | **Student Model** | Qwen3-4B-Instruct-2507 | Smaller for efficiency |
 | **LoRA Rank** | 32 | tinker |
 | **LoRA Alpha** | 16 | verl default |
@@ -88,20 +88,27 @@ pip install -r requirements.txt
 Generate prompt distillation data using the teacher model:
 
 ```bash
+# Option 1: Single instance (uses 4 GPUs with TP=4)
 python create_data.py \
-    --input_file ../tinker-cookbook/example-data/multilingual.txt \
+    --input_file ./example-data/multilingual.txt \
     --output_file ./data/prompt_distillation_lang.jsonl \
-    --model_name Qwen/Qwen3-30B-A3B-Instruct-2507 \
+    --model_name Qwen/Qwen3-30B-A3B-Thinking-2507 \
     --temperature 0.15 \
-    --tensor_parallel_size 2
+    --tensor_parallel_size 4
+
+# Option 2: Parallel instances (uses ALL 8 GPUs - RECOMMENDED for H100x8)
+bash create_data_h100x8_parallel.sh
 ```
 
 **Options:**
 - `--input_file`: Path to input sentences (one per line)
 - `--output_file`: Where to save generated training data
-- `--model_name`: Teacher model (uses Qwen3-30B-A3B-Instruct-2507, matches tinker)
+- `--model_name`: Teacher model (Qwen3-30B-A3B-Thinking-2507 for better accuracy)
 - `--temperature`: Sampling temperature (0.15 matches tinker)
-- `--tensor_parallel_size`: Number of GPUs for inference (recommend 2+ for 30B model)
+- `--tensor_parallel_size`: Number of GPUs for inference (4 recommended)
+- `--max_retries`: Number of retry attempts for failed samples (default: 3)
+
+**For H100x8 users**: Use `create_data_h100x8_parallel.sh` to utilize all 8 GPUs (runs 2 instances in parallel, each with TP=4)
 
 This will:
 - Load sentences from the multilingual dataset

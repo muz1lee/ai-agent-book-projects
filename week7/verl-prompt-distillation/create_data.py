@@ -74,28 +74,81 @@ Instructions:
 9) Ambiguity & confidence:
    - When in doubt, choose 'ot' rather than guessing.
 
+Text to classify:
+{text}
+
 Output format:
 - Respond with EXACTLY one line: "Final Answer: xx"
 - Where xx ∈ {{ar, de, el, en, es, fr, hi, ru, tr, ur, vi, zh, ot}} and nothing else.
-
-Text to classify:
-{text}
 """
 
 
-def parse_final_answer(response: str) -> Optional[str]:
-    """Parse the final answer from the model response."""
-    search_response = re.search(r"Final Answer: (\w+)", response)
-    return search_response.group(1) if search_response else None
+def parse_final_answer(response: str, debug: bool = False) -> Optional[str]:
+    """
+    Parse the final answer from the model response.
+    For Thinking models, extract from <think>...</think> tags or after them.
+    """
+    # For Thinking models, the response may have <think></think> tags
+    # Remove thinking content and focus on the final answer
+    response_stripped = response.strip()
+    
+    # Remove <think>...</think> content if present
+    response_cleaned = re.sub(r'<think>.*?</think>', '', response_stripped, flags=re.DOTALL)
+    response_cleaned = response_cleaned.strip()
+    
+    # Also try the original response
+    candidates = [response_cleaned, response_stripped]
+    
+    valid_labels = {'ar', 'de', 'el', 'en', 'es', 'fr', 'hi', 'ru', 'tr', 'ur', 'vi', 'zh', 'ot'}
+    
+    # Try multiple patterns to extract language label
+    patterns = [
+        r"Final Answer:\s*(\w{2})",  # Standard format
+        r"Final Answer:\s*([a-z]{2})",  # Lowercase only
+        r"Answer:\s*(\w{2})",  # Without "Final"
+        r"Language:\s*(\w{2})",  # "Language: xx"
+        r"^([a-z]{2})$",  # Just the label alone
+        r"\b([a-z]{2})\b\s*$",  # Label at the end with word boundary
+        r"is:\s*(\w{2})",  # "is: xx"
+        r"→\s*(\w{2})",  # "→ xx"
+    ]
+    
+    for candidate in candidates:
+        candidate_lower = candidate.lower()
+        
+        # Try each pattern
+        for pattern in patterns:
+            match = re.search(pattern, candidate_lower, re.MULTILINE)
+            if match:
+                label = match.group(1)
+                if label in valid_labels:
+                    if debug:
+                        print(f"    [DEBUG] Matched pattern '{pattern}' -> '{label}'")
+                    return label
+        
+        # Special case: check if the entire response is just a language code
+        if len(candidate) <= 3 and candidate_lower in valid_labels:
+            if debug:
+                print(f"    [DEBUG] Matched entire response as label -> '{candidate_lower}'")
+            return candidate_lower
+    
+    if debug:
+        print(f"    [DEBUG] No pattern matched.")
+        print(f"    [DEBUG] Response length: {len(response_stripped)}")
+        print(f"    [DEBUG] Cleaned response: '{response_cleaned[:300]}'")
+        print(f"    [DEBUG] Original response: '{response_stripped[:300]}'")
+    
+    return None
 
 
 async def generate_distillation_data(
     input_file: str,
     output_file: str,
-    model_name: str = "Qwen/Qwen3-30B-A3B-Instruct-2507",
+    model_name: str = "Qwen/Qwen3-30B-A3B-Thinking-2507",
     temperature: float = 0.15,
     max_tokens: int = 1000,
     tensor_parallel_size: int = 1,
+    max_retries: int = 3,
 ):
     """
     Generate prompt distillation training data.
@@ -117,36 +170,161 @@ async def generate_distillation_data(
     # Initialize vLLM model
     print(f"Initializing teacher model: {model_name}")
     print(f"Using tensor parallelism across {tensor_parallel_size} GPU(s)")
+    
+    # Get tokenizer to use proper chat template
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    
     llm = LLM(
         model=model_name,
         tensor_parallel_size=tensor_parallel_size,
         trust_remote_code=True,
         gpu_memory_utilization=0.90,  # Use 90% of GPU memory for better throughput
         max_model_len=32768,  # Match training max length
+        enable_prefix_caching=True,  # Cache the system prompt
     )
     
-    # Prepare prompts
-    prompts = [LANGUAGE_CLASSIFICATION_PROMPT.format(text=sentence) for sentence in sentences]
-    
-    # Set sampling parameters - matching tinker's settings
+    # Set sampling parameters - use Qwen3 recommended settings
+    # For Thinking models, we need to allow enough tokens for reasoning
     sampling_params = SamplingParams(
         temperature=temperature,
         max_tokens=max_tokens,
-        stop=["\n\n"],  # Stop at double newline
+        top_p=0.8,
+        top_k=20,
+        # Don't use custom stop sequences - let model finish naturally
+        skip_special_tokens=False,  # Keep special tokens for thinking models
     )
     
+    # Initial generation
     print("Generating labels with teacher model...")
-    outputs = llm.generate(prompts, sampling_params)
+    results = {}  # sentence -> (response, final_answer)
+    failed_indices = []
+    failed_examples = []  # Store examples for debugging
     
-    # Process outputs and save
-    valid_count = 0
-    with open(output_file, "w", encoding="utf-8") as f:
-        for sentence, output in zip(sentences, outputs):
+    # Format prompts using proper chat template
+    print("Formatting prompts with Qwen3 chat template...")
+    formatted_prompts = []
+    for sentence in sentences:
+        messages = [
+            {
+                "role": "user",
+                "content": LANGUAGE_CLASSIFICATION_PROMPT.format(text=sentence)
+            }
+        ]
+        # Use tokenizer's chat template
+        prompt_text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        formatted_prompts.append(prompt_text)
+    
+    print(f"Sample formatted prompt (first 500 chars):")
+    print(formatted_prompts[0][:500])
+    print("...")
+    
+    outputs = llm.generate(formatted_prompts, sampling_params)
+    
+    for idx, (sentence, output) in enumerate(zip(sentences, outputs)):
+        response = output.outputs[0].text
+        # Enable debug mode for first few failures
+        debug_mode = len(failed_examples) < 3
+        final_answer = parse_final_answer(response, debug=debug_mode)
+        
+        if final_answer:
+            results[sentence] = (response, final_answer)
+        else:
+            failed_indices.append(idx)
+            # Store first 10 failed examples for debugging
+            if len(failed_examples) < 10:
+                failed_examples.append({
+                    'sentence': sentence,
+                    'response': response,
+                })
+    
+    print(f"\nInitial generation: {len(results)}/{len(sentences)} successful ({len(results)/len(sentences)*100:.2f}%)")
+    
+    # Show debugging info for failed samples
+    if failed_examples:
+        print(f"\n{'='*60}")
+        print("DEBUGGING: Examples of FAILED responses")
+        print(f"{'='*60}")
+        for i, example in enumerate(failed_examples, 1):
+            print(f"\nFailed Example {i}:")
+            print(f"  Input: {example['sentence']}")
+            print(f"  Response: {example['response']}")
+            print(f"  Parsed result: None")
+    
+    # Show examples of successful responses
+    if results:
+        print(f"\n{'='*60}")
+        print("DEBUGGING: Examples of SUCCESSFUL responses")
+        print(f"{'='*60}")
+        success_examples = list(results.items())[:3]
+        for i, (sentence, (response, label)) in enumerate(success_examples, 1):
+            print(f"\nSuccess Example {i}:")
+            print(f"  Input: {sentence}")
+            print(f"  Response: {response}")
+            print(f"  Parsed label: {label}")
+    
+    # Retry failed generations up to max_retries times
+    for retry in range(1, max_retries + 1):
+        if not failed_indices:
+            break
+            
+        print(f"\nRetry {retry}/{max_retries}: Regenerating {len(failed_indices)} failed samples...")
+        
+        # Prepare prompts for failed sentences
+        retry_sentences = [sentences[idx] for idx in failed_indices]
+        retry_formatted_prompts = []
+        for s in retry_sentences:
+            messages = [
+                {
+                    "role": "user",
+                    "content": LANGUAGE_CLASSIFICATION_PROMPT.format(text=s)
+                }
+            ]
+            prompt_text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+            retry_formatted_prompts.append(prompt_text)
+        
+        # Generate with slightly higher temperature to encourage different outputs
+        retry_params = SamplingParams(
+            temperature=min(temperature * (1 + retry * 0.1), 0.5),  # Gradually increase temp
+            max_tokens=max_tokens,
+            top_p=0.8,
+            top_k=20,
+            skip_special_tokens=False,
+        )
+        
+        retry_outputs = llm.generate(retry_formatted_prompts, retry_params)
+        
+        # Track newly successful and still-failed indices
+        new_failed_indices = []
+        for idx, sentence, output in zip(failed_indices, retry_sentences, retry_outputs):
             response = output.outputs[0].text
             final_answer = parse_final_answer(response)
             
             if final_answer:
-                # Format as conversational data for verl SFT
+                results[sentence] = (response, final_answer)
+            else:
+                new_failed_indices.append(idx)
+        
+        newly_successful = len(failed_indices) - len(new_failed_indices)
+        print(f"  ✓ {newly_successful} more samples successful")
+        print(f"  Total successful: {len(results)}/{len(sentences)} ({len(results)/len(sentences)*100:.2f}%)")
+        
+        failed_indices = new_failed_indices
+    
+    # Save results
+    print(f"\nSaving results to {output_file}...")
+    with open(output_file, "w", encoding="utf-8") as f:
+        for sentence in sentences:
+            if sentence in results:
+                _, final_answer = results[sentence]
                 data = {
                     "messages": [
                         {
@@ -160,13 +338,20 @@ async def generate_distillation_data(
                     ]
                 }
                 f.write(json.dumps(data, ensure_ascii=False) + "\n")
-                valid_count += 1
     
-    print(f"\nData generation complete!")
+    # Final report
+    print(f"\n{'='*60}")
+    print("DATA GENERATION COMPLETE")
+    print(f"{'='*60}")
     print(f"Total sentences: {len(sentences)}")
-    print(f"Valid labels generated: {valid_count}")
-    print(f"Success rate: {valid_count/len(sentences)*100:.2f}%")
+    print(f"Valid labels generated: {len(results)}")
+    print(f"Failed after {max_retries} retries: {len(failed_indices)}")
+    print(f"Final success rate: {len(results)/len(sentences)*100:.2f}%")
     print(f"Saved to: {output_file}")
+    
+    if failed_indices:
+        print(f"\n⚠️  Warning: {len(failed_indices)} sentences failed to generate valid labels")
+        print("Consider inspecting these samples or adjusting the prompt/temperature")
 
 
 def main():
@@ -188,8 +373,8 @@ def main():
     parser.add_argument(
         "--model_name",
         type=str,
-        default="Qwen/Qwen3-30B-A3B-Instruct-2507",
-        help="Teacher model name (matches tinker's Qwen3-30B-A3B, now open source)",
+        default="Qwen/Qwen3-30B-A3B-Thinking-2507",
+        help="Teacher model name (Thinking model for better accuracy)",
     )
     parser.add_argument(
         "--temperature",
@@ -208,6 +393,12 @@ def main():
         type=int,
         default=1,
         help="Number of GPUs for tensor parallelism (recommend 2-4 for 30B model on H100)",
+    )
+    parser.add_argument(
+        "--max_retries",
+        type=int,
+        default=3,
+        help="Maximum number of retries for failed generations",
     )
     
     args = parser.parse_args()
@@ -230,6 +421,7 @@ def main():
             temperature=args.temperature,
             max_tokens=args.max_tokens,
             tensor_parallel_size=args.tensor_parallel_size,
+            max_retries=args.max_retries,
         )
     )
 
