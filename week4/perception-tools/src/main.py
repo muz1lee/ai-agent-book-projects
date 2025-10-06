@@ -15,13 +15,21 @@ from pydantic import Field
 
 # Import all tool functions
 from search_tools import search_web, download_file, search_knowledge_base
-from multimodal_tools import read_webpage, read_document, parse_image, parse_video
+from multimodal_tools import read_webpage, read_document, parse_image, parse_video, extract_youtube_transcript, download_youtube_video
 from filesystem_tools import read_file, grep_search, summarize_text
 from public_data_tools import (
     get_weather, get_stock_price, convert_currency,
     search_wikipedia, search_arxiv, search_wayback
 )
 from private_data_tools import get_calendar_events, search_notion
+from pubchem_tools import search_compounds, get_compound_properties, get_compound_synonyms, search_similar_compounds
+from yahoo_finance_tools import get_stock_quote, get_historical_data, get_company_info, get_financial_statements
+from document_processing_tools import extract_pdf_text, extract_docx_content, extract_pptx_content, extract_csv_content
+from media_processing_tools import transcribe_audio_whisper, extract_audio_metadata, extract_text_ocr, analyze_image_ai, extract_video_keyframes, analyze_video_ai, trim_audio, get_image_metadata
+from google_search_enhanced import google_search_api, read_webpage_content
+from wiki_enhanced import get_article_content, get_article_categories, get_article_links, get_article_history
+from arxiv_enhanced import get_paper_details, download_paper, get_arxiv_categories
+from wayback_enhanced import get_archived_content
 
 
 # Configure logging
@@ -246,6 +254,337 @@ async def wayback_search(
 ):
     """Search Wayback Machine."""
     return await search_wayback(url, year, limit)
+
+
+# ============================================================================
+# YOUTUBE TOOLS
+# ============================================================================
+
+@mcp.tool(description="Extract transcript from a YouTube video")
+async def youtube_transcript(
+    video_id: str = Field(description="YouTube video ID or URL"),
+    language_code: str = Field(default="en", description="Language code for transcript"),
+    translate_to_language: str | None = Field(default=None, description="Translate to this language")
+):
+    """Extract YouTube transcript."""
+    return await extract_youtube_transcript(video_id, language_code, translate_to_language)
+
+
+# ============================================================================
+# PUBCHEM CHEMICAL DATA TOOLS
+# ============================================================================
+
+@mcp.tool(description="Search PubChem for chemical compounds")
+async def pubchem_search(
+    query: str = Field(description="Search term or identifier"),
+    search_type: str = Field(default="name", description="Type: name, cid, smiles, inchi, formula"),
+    max_results: int = Field(default=10, description="Maximum results (1-100)")
+):
+    """Search PubChem compounds."""
+    return await search_compounds(query, search_type, max_results)
+
+
+@mcp.tool(description="Get detailed properties for a PubChem compound")
+async def pubchem_properties(
+    cid: int = Field(description="PubChem Compound ID"),
+    properties: list[str] | None = Field(default=None, description="List of property names")
+):
+    """Get compound properties."""
+    return await get_compound_properties(cid, properties)
+
+
+@mcp.tool(description="Get synonyms for a PubChem compound")
+async def pubchem_synonyms(
+    cid: int = Field(description="PubChem Compound ID"),
+    max_synonyms: int = Field(default=20, description="Maximum synonyms (1-100)")
+):
+    """Get compound synonyms."""
+    return await get_compound_synonyms(cid, max_synonyms)
+
+
+@mcp.tool(description="Search for structurally similar compounds in PubChem")
+async def pubchem_similar(
+    cid: int = Field(description="Reference compound CID"),
+    similarity_threshold: float = Field(default=0.9, description="Similarity threshold (0.0-1.0)"),
+    max_results: int = Field(default=10, description="Maximum results (1-50)")
+):
+    """Search similar compounds."""
+    return await search_similar_compounds(cid, similarity_threshold, max_results)
+
+
+# ============================================================================
+# YAHOO FINANCE TOOLS
+# ============================================================================
+
+@mcp.tool(description="Get current stock quote and market data")
+async def yfinance_quote(
+    symbol: str = Field(description="Stock ticker symbol (e.g., AAPL, MSFT)")
+):
+    """Get stock quote."""
+    return await get_stock_quote(symbol)
+
+
+@mcp.tool(description="Get historical stock price data")
+async def yfinance_historical(
+    symbol: str = Field(description="Stock ticker symbol"),
+    start: str = Field(description="Start date (YYYY-MM-DD)"),
+    end: str = Field(description="End date (YYYY-MM-DD)"),
+    interval: str = Field(default="1d", description="Data interval (1d, 1wk, 1mo)"),
+    max_rows_preview: int = Field(default=10, description="Max rows in preview")
+):
+    """Get historical stock data."""
+    return await get_historical_data(symbol, start, end, interval, max_rows_preview)
+
+
+@mcp.tool(description="Get comprehensive company information")
+async def yfinance_company_info(
+    symbol: str = Field(description="Stock ticker symbol")
+):
+    """Get company information."""
+    return await get_company_info(symbol)
+
+
+@mcp.tool(description="Get financial statements (income statement, balance sheet, cash flow)")
+async def yfinance_financials(
+    symbol: str = Field(description="Stock ticker symbol"),
+    statement_type: str = Field(description="Type: income_statement, balance_sheet, cash_flow"),
+    period_type: str = Field(default="annual", description="Period: annual or quarterly"),
+    max_columns_preview: int = Field(default=4, description="Max periods to show")
+):
+    """Get financial statements."""
+    return await get_financial_statements(symbol, statement_type, period_type, max_columns_preview)
+
+
+# ============================================================================
+# DOCUMENT PROCESSING TOOLS
+# ============================================================================
+
+@mcp.tool(description="Extract text from PDF file with optional page range")
+async def pdf_extract(
+    file_path: str = Field(description="Path to PDF file"),
+    page_range: str | None = Field(default=None, description="Page range (e.g., '1-5' or '1,3,5')")
+):
+    """Extract text from PDF."""
+    return await extract_pdf_text(file_path, page_range)
+
+
+@mcp.tool(description="Extract content from Word document (DOCX)")
+async def docx_extract(
+    file_path: str = Field(description="Path to DOCX file")
+):
+    """Extract content from DOCX."""
+    return await extract_docx_content(file_path)
+
+
+@mcp.tool(description="Extract content from PowerPoint presentation (PPTX)")
+async def pptx_extract(
+    file_path: str = Field(description="Path to PPTX file")
+):
+    """Extract content from PPTX."""
+    return await extract_pptx_content(file_path)
+
+
+@mcp.tool(description="Extract and parse CSV file data")
+async def csv_parse(
+    file_path: str = Field(description="Path to CSV file"),
+    max_rows: int = Field(default=1000, description="Maximum rows to read")
+):
+    """Parse CSV data."""
+    return await extract_csv_content(file_path, max_rows)
+
+
+# ============================================================================
+# MEDIA PROCESSING TOOLS
+# ============================================================================
+
+@mcp.tool(description="Transcribe audio to text using Whisper")
+async def audio_transcribe(
+    file_path: str = Field(description="Path to audio file"),
+    model_size: str = Field(default="base", description="Whisper model size"),
+    language: str = Field(default="en", description="Language code")
+):
+    """Transcribe audio to text."""
+    return await transcribe_audio_whisper(file_path, model_size, language)
+
+
+@mcp.tool(description="Extract audio file metadata")
+async def audio_metadata(
+    file_path: str = Field(description="Path to audio file")
+):
+    """Extract audio metadata."""
+    return await extract_audio_metadata(file_path)
+
+
+@mcp.tool(description="Extract text from image using OCR")
+async def image_ocr(
+    image_path: str = Field(description="Path to image file"),
+    language: str = Field(default="eng", description="OCR language")
+):
+    """Extract text from image using OCR."""
+    return await extract_text_ocr(image_path, language)
+
+
+@mcp.tool(description="Analyze image using AI vision")
+async def image_analyze(
+    image_path: str = Field(description="Path to image file"),
+    prompt: str = Field(default="Describe this image in detail", description="Analysis prompt")
+):
+    """Analyze image with AI."""
+    return await analyze_image_ai(image_path, prompt)
+
+
+@mcp.tool(description="Extract keyframes from video")
+async def video_keyframes(
+    video_path: str = Field(description="Path to video file"),
+    num_frames: int = Field(default=10, description="Number of keyframes to extract")
+):
+    """Extract video keyframes."""
+    return await extract_video_keyframes(video_path, num_frames)
+
+
+@mcp.tool(description="Analyze video content using AI vision")
+async def video_analyze(
+    video_path: str = Field(description="Path to video file"),
+    num_frames: int = Field(default=5, description="Number of frames to analyze"),
+    prompt: str = Field(default="Analyze this video and describe what's happening", description="Analysis prompt")
+):
+    """Analyze video with AI."""
+    return await analyze_video_ai(video_path, num_frames, prompt)
+
+
+@mcp.tool(description="Trim audio file to specific time range")
+async def audio_trim(
+    audio_path: str = Field(description="Path to audio file"),
+    start_time: float = Field(description="Start time in seconds"),
+    duration: float | None = Field(default=None, description="Duration in seconds"),
+    output_path: str | None = Field(default=None, description="Output file path")
+):
+    """Trim audio file."""
+    return await trim_audio(audio_path, start_time, duration, output_path)
+
+
+@mcp.tool(description="Get detailed image metadata including EXIF")
+async def image_metadata(
+    image_path: str = Field(description="Path to image file")
+):
+    """Get image metadata."""
+    return await get_image_metadata(image_path)
+
+
+@mcp.tool(description="Download YouTube video")
+async def youtube_download(
+    url: str = Field(description="YouTube video URL"),
+    output_dir: str = Field(default=".", description="Output directory"),
+    max_resolution: str = Field(default="720p", description="Maximum resolution")
+):
+    """Download YouTube video."""
+    return await download_youtube_video(url, output_dir, max_resolution)
+
+
+# ============================================================================
+# GOOGLE SEARCH ENHANCED TOOLS
+# ============================================================================
+
+@mcp.tool(description="Search Google with API or DuckDuckGo fallback")
+async def google_search_enhanced(
+    query: str = Field(description="Search query"),
+    num_results: int = Field(default=5, description="Number of results (1-10)"),
+    safe_search: bool = Field(default=True, description="Enable safe search"),
+    language: str = Field(default="en", description="Language code"),
+    country: str = Field(default="us", description="Country code")
+):
+    """Enhanced Google search."""
+    return await google_search_api(query, num_results, safe_search, language, country)
+
+
+@mcp.tool(description="Read and extract content from webpage")
+async def webpage_read_enhanced(
+    url: str = Field(description="URL to read"),
+    extract_links: bool = Field(default=False, description="Extract links from page")
+):
+    """Read webpage content."""
+    return await read_webpage_content(url, extract_links)
+
+
+# ============================================================================
+# WIKIPEDIA ENHANCED TOOLS
+# ============================================================================
+
+@mcp.tool(description="Get full Wikipedia article content")
+async def wiki_article_full(
+    title: str = Field(description="Article title"),
+    language: str = Field(default="en", description="Language code")
+):
+    """Get full Wikipedia article."""
+    return await get_article_content(title, language)
+
+
+@mcp.tool(description="Get Wikipedia article categories")
+async def wiki_article_categories(
+    title: str = Field(description="Article title"),
+    language: str = Field(default="en", description="Language code")
+):
+    """Get article categories."""
+    return await get_article_categories(title, language)
+
+
+@mcp.tool(description="Get links from Wikipedia article")
+async def wiki_article_links(
+    title: str = Field(description="Article title"),
+    language: str = Field(default="en", description="Language code")
+):
+    """Get article links."""
+    return await get_article_links(title, language)
+
+
+@mcp.tool(description="Get historical version of Wikipedia article")
+async def wiki_article_history(
+    title: str = Field(description="Article title"),
+    date: str = Field(description="Date (YYYY/MM/DD)"),
+    language: str = Field(default="en", description="Language code")
+):
+    """Get historical Wikipedia article."""
+    return await get_article_history(title, date, language)
+
+
+# ============================================================================
+# ARXIV ENHANCED TOOLS
+# ============================================================================
+
+@mcp.tool(description="Get detailed ArXiv paper information")
+async def arxiv_paper_details(
+    paper_id: str = Field(description="ArXiv paper ID")
+):
+    """Get paper details."""
+    return await get_paper_details(paper_id)
+
+
+@mcp.tool(description="Download ArXiv paper PDF")
+async def arxiv_download(
+    paper_id: str = Field(description="ArXiv paper ID"),
+    download_dir: str = Field(default=".", description="Download directory")
+):
+    """Download ArXiv paper."""
+    return await download_paper(paper_id, download_dir)
+
+
+@mcp.tool(description="Get ArXiv subject categories")
+async def arxiv_categories():
+    """Get ArXiv categories."""
+    return await get_arxiv_categories()
+
+
+# ============================================================================
+# WAYBACK ENHANCED TOOLS
+# ============================================================================
+
+@mcp.tool(description="Get content from archived webpage")
+async def wayback_archived_content(
+    url: str = Field(description="URL to retrieve"),
+    timestamp: str = Field(description="Timestamp (YYYYMMDDhhmmss)")
+):
+    """Get archived webpage content."""
+    return await get_archived_content(url, timestamp)
 
 
 # ============================================================================

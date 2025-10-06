@@ -366,3 +366,189 @@ async def parse_video(
             type="text",
             text=json.dumps(action_response.model_dump())
         )
+
+
+async def download_youtube_video(
+    url: str,
+    output_dir: str = ".",
+    max_resolution: str = "720p"
+) -> Union[str, TextContent]:
+    """
+    Download YouTube video using yt-dlp.
+    
+    Args:
+        url: YouTube video URL
+        output_dir: Directory to save video
+        max_resolution: Maximum resolution (360p, 480p, 720p, 1080p)
+        
+    Returns:
+        TextContent with download result
+    """
+    try:
+        logging.info(f"📥 Downloading YouTube video: {url}")
+        
+        try:
+            import yt_dlp
+            
+            output_template = Path(output_dir) / '%(title)s.%(ext)s'
+            
+            ydl_opts = {
+                'format': f'best[height<={max_resolution[:-1]}]',
+                'outtmpl': str(output_template),
+                'quiet': False
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                
+                result = {
+                    "title": info['title'],
+                    "duration": info.get('duration'),
+                    "output_dir": output_dir,
+                    "resolution": max_resolution,
+                    "video_id": info['id']
+                }
+                
+                logging.info(f"✅ Downloaded: {info['title']}")
+                
+                action_response = ActionResponse(
+                    success=True,
+                    message=result,
+                    metadata={"url": url}
+                )
+                
+        except ImportError:
+            raise ImportError("yt-dlp not installed. Install with: pip install yt-dlp")
+        
+        return TextContent(
+            type="text",
+            text=json.dumps(action_response.model_dump())
+        )
+        
+    except Exception as e:
+        error_msg = f"YouTube download failed: {str(e)}"
+        logging.error(f"YouTube download error: {traceback.format_exc()}")
+        
+        action_response = ActionResponse(
+            success=False,
+            message=error_msg,
+            metadata={"error_type": "youtube_download_error"}
+        )
+        
+        return TextContent(
+            type="text",
+            text=json.dumps(action_response.model_dump())
+        )
+
+
+async def extract_youtube_transcript(
+    video_id: str,
+    language_code: str = "en",
+    translate_to_language: str | None = None
+) -> Union[str, TextContent]:
+    """
+    Extract transcript from a YouTube video.
+    
+    Args:
+        video_id: YouTube video ID or URL
+        language_code: Language code for the transcript (default: en)
+        translate_to_language: Translate transcript to this language if provided
+        
+    Returns:
+        TextContent with transcript data
+    """
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        
+        # Clean video_id if full URL was provided
+        if "youtube.com" in video_id or "youtu.be" in video_id:
+            if "?v=" in video_id:
+                video_id = video_id.split("?v=")[-1].split("&")[0]
+            elif "youtu.be/" in video_id:
+                video_id = video_id.split("youtu.be/")[-1].split("?")[0]
+        
+        logging.info(f"📺 Extracting transcript for video ID: {video_id}")
+        
+        # Get transcript using correct API
+        if translate_to_language:
+            transcript_list = YouTubeTranscriptApi().list(video_id)
+            try:
+                transcript = transcript_list.find_transcript([language_code])
+            except Exception:
+                # If specified language not found, get any available transcript
+                transcript = transcript_list.find_generated_transcript(["en"])
+            # Translate to target language
+            fetched_transcript = transcript.translate(translate_to_language).fetch()
+            transcript_data = fetched_transcript.snippets
+        else:
+            try:
+                # Use fetch method which returns FetchedTranscript
+                fetched_transcript = YouTubeTranscriptApi().fetch(
+                    video_id, 
+                    languages=(language_code,)
+                )
+                transcript_data = fetched_transcript.snippets
+            except Exception:
+                # Fallback to English
+                fetched_transcript = YouTubeTranscriptApi().fetch(video_id, languages=("en",))
+                transcript_data = fetched_transcript.snippets
+        
+        # Format transcript
+        formatted_transcript = []
+        for entry in transcript_data:
+            # Access as object attributes, not dictionary
+            start_time = entry.start if hasattr(entry, 'start') else entry.get('start', 0)
+            text = entry.text if hasattr(entry, 'text') else entry.get('text', '')
+            minutes, seconds = divmod(int(start_time), 60)
+            timestamp = f"{minutes:02d}:{seconds:02d}"
+            formatted_transcript.append({
+                "timestamp": timestamp,
+                "text": text
+            })
+        
+        # Create full text version
+        full_text = " ".join([
+            entry.text if hasattr(entry, 'text') else entry.get('text', '') 
+            for entry in transcript_data
+        ])
+        
+        result = {
+            "video_id": video_id,
+            "language": translate_to_language if translate_to_language else language_code,
+            "transcript": formatted_transcript[:100],  # Limit to first 100 entries
+            "total_entries": len(transcript_data),
+            "full_text": full_text[:5000],  # Limit full text to 5000 chars
+            "full_text_length": len(full_text)
+        }
+        
+        logging.info(f"✅ Successfully extracted transcript ({len(transcript_data)} entries)")
+        
+        action_response = ActionResponse(
+            success=True,
+            message=result,
+            metadata={
+                "video_id": video_id,
+                "language": language_code,
+                "translated": translate_to_language is not None
+            }
+        )
+        
+        return TextContent(
+            type="text",
+            text=json.dumps(action_response.model_dump())
+        )
+        
+    except Exception as e:
+        error_msg = f"YouTube transcript extraction failed: {str(e)}"
+        logging.error(f"YouTube error: {traceback.format_exc()}")
+        
+        action_response = ActionResponse(
+            success=False,
+            message=error_msg,
+            metadata={"error_type": "youtube_error", "video_id": video_id}
+        )
+        
+        return TextContent(
+            type="text",
+            text=json.dumps(action_response.model_dump())
+        )
