@@ -76,13 +76,32 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="code_interpreter",
-            description="Execute Python code in a sandboxed environment with result analysis",
+            description="Execute code in multiple programming languages in a sandboxed environment with result analysis. Supports: Python, JavaScript, TypeScript, Go, Java, C++, Rust, PHP, Bash",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "code": {
                         "type": "string",
-                        "description": "Python code to execute"
+                        "description": "Code to execute"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Programming language (python, javascript, typescript, go, java, cpp, rust, php, bash)",
+                        "default": "python"
+                    },
+                    "timeout": {
+                        "type": "number",
+                        "description": "Execution timeout in seconds",
+                        "default": 30.0
+                    },
+                    "stdin": {
+                        "type": "string",
+                        "description": "Optional stdin input for the program"
+                    },
+                    "files": {
+                        "type": "object",
+                        "description": "Optional additional files (filename -> content mapping)",
+                        "additionalProperties": {"type": "string"}
                     }
                 },
                 "required": ["code"]
@@ -196,7 +215,11 @@ async def handle_call_tool(
             )
         elif name == "code_interpreter":
             result = await execution_tools.code_interpreter(
-                code=arguments["code"]
+                code=arguments["code"],
+                language=arguments.get("language", "python"),
+                timeout=arguments.get("timeout", 30.0),
+                stdin=arguments.get("stdin"),
+                files=arguments.get("files")
             )
         elif name == "virtual_terminal":
             result = await execution_tools.virtual_terminal(

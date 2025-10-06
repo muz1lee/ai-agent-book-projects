@@ -4,10 +4,11 @@ import subprocess
 import sys
 import io
 import traceback
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from contextlib import redirect_stdout, redirect_stderr
 from llm_helper import LLMHelper
 from config import Config
+from multilang_executor import LanguageExecutor, ExecutionStatus
 
 
 class ExecutionTools:
@@ -16,94 +17,102 @@ class ExecutionTools:
     def __init__(self, llm_helper: LLMHelper):
         """Initialize execution tools with LLM helper."""
         self.llm_helper = llm_helper
+        self.lang_executor = LanguageExecutor(workspace_dir=Config.WORKSPACE_DIR)
     
     async def code_interpreter(
         self,
         code: str,
-        language: str = "python"
+        language: str = "python",
+        timeout: float = 30.0,
+        stdin: Optional[str] = None,
+        files: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
-        Execute code in a sandboxed environment.
+        Execute code in a sandboxed environment with multi-language support.
         
         Args:
             code: Code to execute
-            language: Programming language (currently only python supported)
+            language: Programming language (python, javascript, typescript, go, java, cpp, rust, php, bash)
+            timeout: Execution timeout in seconds
+            stdin: Optional stdin input
+            files: Optional additional files
             
         Returns:
             Result dictionary with output and analysis
         """
-        if language != "python":
-            return {
-                "success": False,
-                "error": f"Language {language} not supported yet"
-            }
+        language = language.lower()
         
-        # Verify syntax first
-        if Config.AUTO_VERIFY_CODE:
+        # Verify syntax first (only for Python for now)
+        if Config.AUTO_VERIFY_CODE and language in ['python', 'python3']:
             is_valid, error_msg = self.llm_helper.verify_code_syntax(code, language)
             if not is_valid:
                 return {
                     "success": False,
                     "error": f"Syntax error: {error_msg}",
-                    "verification": "failed"
+                    "verification": "failed",
+                    "language": language
                 }
         
         # Check for dangerous operations
         if Config.REQUIRE_APPROVAL_FOR_DANGEROUS_OPS:
-            dangerous_patterns = [
-                'os.system', 'subprocess', 'eval', 'exec',
-                'open(', '__import__', 'compile'
-            ]
+            dangerous_patterns = {
+                'python': ['os.system', 'subprocess', 'eval', 'exec', 'open(', '__import__', 'compile'],
+                'bash': ['rm -rf', 'dd if=', 'mkfs', '> /dev/', 'curl', 'wget'],
+                'php': ['exec(', 'system(', 'shell_exec(', 'passthru(', 'eval('],
+            }
             
-            if any(pattern in code for pattern in dangerous_patterns):
+            patterns = dangerous_patterns.get(language, [])
+            detected = [p for p in patterns if p in code]
+            
+            if detected:
                 approved, reason = self.llm_helper.request_approval(
                     "code_execution",
                     {
                         "code": code,
-                        "detected_patterns": [p for p in dangerous_patterns if p in code]
+                        "language": language,
+                        "detected_patterns": detected
                     }
                 )
                 
                 if not approved:
                     return {
                         "success": False,
-                        "error": f"Execution not approved: {reason}"
+                        "error": f"Execution not approved: {reason}",
+                        "language": language
                     }
         
-        # Execute code
-        stdout_capture = io.StringIO()
-        stderr_capture = io.StringIO()
-        
+        # Execute code using multi-language executor
         try:
-            # Create a restricted namespace
-            namespace = {
-                '__builtins__': __builtins__,
-                'print': print
-            }
+            result = await self.lang_executor.execute_code(
+                code=code,
+                language=language,
+                timeout=timeout,
+                stdin=stdin,
+                files=files
+            )
             
-            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                exec(code, namespace)
+            # Convert status to success flag
+            success = result.get('status') == ExecutionStatus.SUCCESS
             
-            stdout_value = stdout_capture.getvalue()
-            stderr_value = stderr_capture.getvalue()
+            # Summarize long outputs
+            stdout = result.get('stdout', '')
+            stderr = result.get('stderr', '')
             
-            # Summarize stdout if it is too long (>10000 characters)
-            if Config.AUTO_SUMMARIZE_COMPLEX_OUTPUT and len(stdout_value) > 10000:
-                stdout_value = self.llm_helper.summarize_output(
-                    "code_interpreter",
-                    stdout_value
-                )
-            # Summarize stderr if it is too long (>10000 characters)
-            if Config.AUTO_SUMMARIZE_COMPLEX_OUTPUT and len(stderr_value) > 10000:
-                stderr_value = self.llm_helper.summarize_output(
-                    "code_interpreter",
-                    stderr_value
-                )
+            if Config.AUTO_SUMMARIZE_COMPLEX_OUTPUT and len(stdout) > 10000:
+                stdout = self.llm_helper.summarize_output("code_interpreter", stdout)
+            if Config.AUTO_SUMMARIZE_COMPLEX_OUTPUT and len(stderr) > 10000:
+                stderr = self.llm_helper.summarize_output("code_interpreter", stderr)
             
             return {
-                "success": True,
-                "stdout": stdout_value,
-                "stderr": stderr_value,
+                "success": success,
+                "status": result.get('status'),
+                "language": result.get('language', language),
+                "stdout": stdout,
+                "stderr": stderr,
+                "returncode": result.get('returncode'),
+                "error": result.get('error'),
+                "compile_output": result.get('compile_output'),
+                "phase": result.get('phase'),
                 "verification": "passed" if Config.AUTO_VERIFY_CODE else "skipped"
             }
             
@@ -112,6 +121,7 @@ class ExecutionTools:
             return {
                 "success": False,
                 "error": error_output,
+                "language": language
             }
     
     async def virtual_terminal(
