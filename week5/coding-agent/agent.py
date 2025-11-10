@@ -428,24 +428,27 @@ class CodingAgent:
                             })
             
             elif role == "assistant":
-                if isinstance(content, str):
-                    openai_messages.append({"role": "assistant", "content": content})
-                elif "tool_calls" in msg:
-                    openai_messages.append({
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": [
-                            {
-                                "id": tc["id"],
-                                "type": "function",
-                                "function": {
-                                    "name": tc["name"],
-                                    "arguments": tc["arguments"]
-                                }
+                msg_dict = {"role": "assistant", "content": content}
+                if "tool_calls" in msg and msg["tool_calls"]:
+                    msg_dict["tool_calls"] = [
+                        {
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": tc["arguments"]
                             }
-                            for tc in msg["tool_calls"]
-                        ]
-                    })
+                        } for tc in msg["tool_calls"]
+                    ]
+                openai_messages.append(msg_dict)
+
+            elif role == "tool":
+                # 保留 tool 消息
+                openai_messages.append({
+                    "role": "tool",
+                    "tool_call_id": msg.get("tool_call_id", ""),
+                    "content": content
+                })
         
         return openai_messages
     
